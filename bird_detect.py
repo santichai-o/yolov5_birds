@@ -8,15 +8,8 @@ from utils.dataloaders import LoadStreams
 from utils.general import check_img_size, non_max_suppression, scale_boxes, print_args
 from utils.torch_utils import select_device
 from ultralytics.utils.plotting import Annotator
-
-def draw_cross(im, center, color=(0, 0, 255), thickness=2, size=10):
-    center_x, center_y = center
-    cv2.line(im, (center_x - size, center_y), (center_x + size, center_y), color, thickness)
-    cv2.line(im, (center_x, center_y - size), (center_x, center_y + size), color, thickness)
-
-def draw_label(im, label, xyxy, color=(0, 0, 255), thickness=2):
-    x1, y1 = int(xyxy[0]), int(xyxy[1])
-    cv2.putText(im, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, thickness)
+from utils.draw import draw_cross, draw_label, draw_circle
+from control import move
 
 def run(
     weights='yolov5s.pt',  # model.pt path(s)
@@ -71,6 +64,9 @@ def run(
         for i, det in enumerate(pred):  # per image
             p, im0 = path[i], im0s[i].copy()
             p = Path(p)  # to Path
+            h, w, _ = im0.shape
+            center_x = w // 2
+            center_y = h // 2
 
             if disp:
                 annotator = Annotator(im0, line_width=line_thickness, example=str(names))
@@ -85,7 +81,7 @@ def run(
                 for *xyxy, conf, cls in det:
                     x1, y1, x2, y2 = xyxy
                     area = (x2 - x1) * (y2 - y1)
-                    if area > max_area:
+                    if conf > 0.6 and area > max_area:
                         max_area = area
                         largest_box = (xyxy, conf, cls)
 
@@ -96,22 +92,29 @@ def run(
                     label = f"{names[c]} {conf:.2f}"
 
                     # Calculate center of the largest bounding box
-                    center_x = int((xyxy[0] + xyxy[2]) / 2)
-                    center_y = int((xyxy[1] + xyxy[3]) / 2)
+                    mcenter_x = int((xyxy[0] + xyxy[2]) / 2)
+                    mcenter_y = int((xyxy[1] + xyxy[3]) / 2)
+
+                    move((center_x, center_y), (mcenter_x, mcenter_y))
 
                     # Print the label and center coordinates in the console
                     if disp:
                         # annotator.box_label(xyxy, label, color=(0, 255, 0))
                         draw_label(im0, label, xyxy)
-                        draw_cross(im0, (center_x, center_y))
-                    else:
-                        print(f"Detected: {label} at center ({center_x}, {center_y})")
+
+                        if abs(center_x - mcenter_x) < 10 and abs(center_y - mcenter_y) < 10 :
+                            draw_circle(im0, (center_x, center_y), radius=15)
+                        else:
+                            draw_cross(im0, (mcenter_x, mcenter_y))
+                    # else:
+                    #     print(f"Detected: {label} at center ({center_x}, {center_y})")
+            else:
+                move((center_x, center_y))
 
             # Stream results
             if disp:
                 # Draw cross at center
-                h, w, _ = im0.shape
-                draw_cross(im0, (w // 2, h // 2), color=(0, 255, 0))
+                draw_cross(im0, (center_x, center_y), color=(0, 255, 0))
 
                 im0 = annotator.result()
                 cv2.imshow(str(p), im0)
